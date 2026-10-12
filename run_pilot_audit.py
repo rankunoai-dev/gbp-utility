@@ -1,223 +1,186 @@
-﻿import sys
-import os
-sys.path.append('.')
+"""End-to-end pilot run: dataset -> (live website sync) -> engine -> workbook -> validation.
 
-from core.adapters.website_adapter import WebsiteAdapter
-from core.gap_engine import GapEngine
-from core.reporter import ReportGenerator
+Usage::
 
-def run_pilot():
-    print('==================================================================')
-    print('   RANKUNO ENTERPRISE GBP & COMPETITIVE INTELLIGENCE ENGINE       ')
-    print('==================================================================')
-    
-    web_adapter = WebsiteAdapter()
-    gap_engine = GapEngine()
-    reporter = ReportGenerator()
-    
-    # 1. Fetch live ground-truth website programs for Fairport & Henrietta
-    print('[*] Fetching live client website programs from Childtime...')
-    fairport_site = web_adapter.scrape_school_page('https://www.childtime.com/your-local-school/fairport-ny-0002/')
-    henrietta_site = web_adapter.scrape_school_page('https://www.childtime.com/your-local-school/rochester-ny-0003/')
-    
-    # 2. Configure Client Schools Data (Ground truth from Google Maps + Website)
-    fairport_client = {
-        'brand': 'Childtime Learning Centers',
-        'school_id': '0002',
-        'school_name': 'Childtime of Fairport',
-        'website_url': fairport_site['url'],
-        'gbp_url': 'https://www.google.com/maps/search/?api=1&query=Childtime+of+Fairport+585+Garnsey+Rd+Fairport+NY+14450',
-        'address': '585 Garnsey Rd, Fairport, NY 14450',
-        'city': 'Fairport',
-        'state': 'NY',
-        'zip': '14450',
-        'rating': 4.7,
-        'reviews_count': 12,
-        'primary_category': 'Day care center',
-        'additional_categories': ['Preschool', 'Child care agency'],
-        'website_programs': fairport_site['programs'],
-        'gbp_services': ['Infant Care', 'Toddler Care', 'Early Preschool', 'Pre-K', 'Before & After School Care']
-    }
-    
-    henrietta_client = {
-        'brand': 'Childtime Learning Centers',
-        'school_id': '0003',
-        'school_name': 'Childtime of Henrietta (Rochester)',
-        'website_url': henrietta_site['url'],
-        'gbp_url': 'https://www.google.com/maps/search/?api=1&query=Childtime+of+Henrietta+896+Calkins+Rd+Rochester+NY+14623',
-        'address': '896 Calkins Rd, Rochester, NY 14623',
-        'city': 'Rochester',
-        'state': 'NY',
-        'zip': '14623',
-        'rating': 3.7,
-        'reviews_count': 16,
-        'primary_category': 'Day care center',
-        'additional_categories': ['Preschool'],
-        'website_programs': henrietta_site['programs'],
-        'gbp_services': ['Infant Care', 'Toddler Care', 'Early Preschool', 'Pre-K', 'Junior Kindergarten', 'Before & After School Care']
-    }
-    
-    # 3. Real Competitors (Verified Real Addresses, Real Ratings, Real Locations)
-    fairport_comps = [
-        {
-            'name': 'KinderCare Learning Center - Victor / Fishers Run',
-            'website_url': 'https://www.kindercare.com/our-centers/victor/ny/301132',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=KinderCare+Learning+Center+Fishers+Run+Victor+NY',
-            'address': '7520 State Route 96 / Fishers Run, Victor, NY 14564',
-            'distance_miles': 3.1,
-            'rating': 4.6,
-            'reviews_count': 34,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Child care agency'],
-            'services': ['Infant Care', 'Toddler Care', 'Discovery Preschool', 'Preschool Program', 'Pre-Kindergarten', 'Kindergarten', 'Before and After School', 'Summer Camp']
-        },
-        {
-            'name': 'The Goddard School of Pittsford (Bushnell\'s Basin)',
-            'website_url': 'https://www.goddardschool.com/schools/ny/pittsford/bushnells-basin',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=The+Goddard+School+131+Sullys+Trail+Pittsford+NY+14534',
-            'address': '131 Sully\'s Trail, Pittsford, NY 14534',
-            'distance_miles': 2.9,
-            'rating': 4.9,
-            'reviews_count': 68,
-            'primary_category': 'Preschool',
-            'additional_categories': ['Day care center', 'Kindergarten', 'Educational institution'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Pre-K', 'Junior Kindergarten', 'Kindergarten', 'F.L.EX. Learning Program', 'Summer Camp']
-        },
-        {
-            'name': 'Crayon Campus Early Learning Center',
-            'website_url': 'https://www.crayoncampus.com/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Crayon+Campus+200+Kreag+Rd+Fairport+NY+14450',
-            'address': '200 Kreag Rd, Fairport, NY 14450',
-            'distance_miles': 1.8,
-            'rating': 4.5,
-            'reviews_count': 22,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Child care agency', 'Nursery school'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Pre-K', 'Before and After School', 'Summer Camp']
-        },
-        {
-            'name': 'Care-a-lot Child Care Center - Pittsford/Fairport',
-            'website_url': 'https://carealotchildcare.com/locations/pittsford',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Care-a-lot+Child+Care+Center+Pittsford+NY',
-            'address': '104 Allens Creek Rd, Rochester/Pittsford, NY 14618',
-            'distance_miles': 4.2,
-            'rating': 4.2,
-            'reviews_count': 29,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Child care agency', 'Preschool', 'After school program'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Before and After School', 'Summer Camp']
-        },
-        {
-            'name': 'Perinton Nursery School (Co-op)',
-            'website_url': 'https://www.perintonnurseryschool.org/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Perinton+Nursery+School+Fairport+NY',
-            'address': '26 Church St, Fairport, NY 14450',
-            'distance_miles': 1.4,
-            'rating': 4.8,
-            'reviews_count': 15,
-            'primary_category': 'Preschool',
-            'additional_categories': ['Nursery school'],
-            'services': ['Toddler Program', 'Preschool Program', 'Pre-K']
-        },
-        {
-            'name': 'Generations Child Care - Fairport',
-            'website_url': 'https://www.generations-care.org/fairport',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Generations+Child+Care+468+Moseley+Rd+Fairport+NY+14450',
-            'address': '468 Moseley Rd, Fairport, NY 14450',
-            'distance_miles': 1.9,
-            'rating': 4.2,
-            'reviews_count': 31,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Child care agency', 'After school program'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Before and After School', 'Summer Camp']
-        },
-        # Sister brand present in territory to verify filter
-        {
-            'name': 'La Petite Academy of Victor (Sister Brand)',
-            'website_url': 'https://www.lapetite.com/your-local-school/victor-ny-7312/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=La+Petite+Academy+Victor+NY',
-            'address': '7480 Pittsford Victor Rd, Victor, NY 14564',
-            'distance_miles': 4.1,
-            'rating': 4.6,
-            'reviews_count': 44,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Child care agency'],
-            'services': ['Infant Care', 'Toddler Care', 'Early Preschool', 'Pre-K', 'Before & After School Care']
-        }
-    ]
-    
-    henrietta_comps = [
-        {
-            'name': 'Doodle Bugs! Children\'s Learning Academy - Henrietta',
-            'website_url': 'https://www.doodlebugs.com/henrietta/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Doodle+Bugs+Childrens+Learning+Academy+705+Calkins+Rd+Rochester+NY+14623',
-            'address': '705 Calkins Rd, Rochester, NY 14623',
-            'distance_miles': 0.5,
-            'rating': 4.8,
-            'reviews_count': 64,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Child care agency', 'Summer camp', 'Nursery school'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Pre-K', 'Private Kindergarten', 'School Break Camps', 'Summer Camp']
-        },
-        {
-            'name': 'Pride & Joy Child Care Center',
-            'website_url': 'https://www.prideandjoychildcare.com/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Pride+and+Joy+Child+Care+Rochester+NY',
-            'address': '2665 E Henrietta Rd, Henrietta, NY 14467',
-            'distance_miles': 1.6,
-            'rating': 4.5,
-            'reviews_count': 26,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Child care agency'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Before and After School', 'Summer Camp']
-        },
-        {
-            'name': 'Care-a-lot Child Care Center - Henrietta',
-            'website_url': 'https://carealotchildcare.com/locations/henrietta',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Care-a-lot+Child+Care+Center+1200+Jefferson+Rd+Rochester+NY+14623',
-            'address': '1200 Jefferson Rd, Rochester, NY 14623',
-            'distance_miles': 2.4,
-            'rating': 4.3,
-            'reviews_count': 35,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Nursery school', 'After school program'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Before and After School', 'Summer Camp']
-        },
-        {
-            'name': 'Twelve Corners Day Care Center',
-            'website_url': 'https://twelvecornersdaycare.org/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Twelve+Corners+Day+Care+Center+Rochester+NY',
-            'address': '1900 Monroe Ave, Rochester, NY 14618',
-            'distance_miles': 3.8,
-            'rating': 4.7,
-            'reviews_count': 42,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool', 'Child care agency'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool Program', 'Pre-K', 'Summer Camp']
-        },
-        # Sister brand present in territory to verify filter
-        {
-            'name': 'Tutor Time Child Care (Sister Brand)',
-            'website_url': 'https://www.tutortime.com/your-local-school/rochester-ny-6021/',
-            'maps_url': 'https://www.google.com/maps/search/?api=1&query=Tutor+Time+Rochester+NY',
-            'address': '1800 West Henrietta Rd, Rochester, NY 14623',
-            'distance_miles': 3.2,
-            'rating': 4.5,
-            'reviews_count': 39,
-            'primary_category': 'Day care center',
-            'additional_categories': ['Preschool'],
-            'services': ['Infant Care', 'Toddler Care', 'Preschool', 'School Break Camps']
-        }
-    ]
-    
-    print('[*] Running Gap & Benchmark Intelligence Engine...')
-    analyzed_fairport = gap_engine.analyze_school(fairport_client, fairport_comps)
-    analyzed_henrietta = gap_engine.analyze_school(henrietta_client, henrietta_comps)
-    
-    output_xlsx = 'RankUno_GBP_Intelligence_Audit_Master.xlsx'
-    print(f'[*] Building 4-sheet Executive Report: {output_xlsx}...')
-    reporter.generate_workbook([analyzed_fairport, analyzed_henrietta], output_xlsx)
-    print('[+] Complete pipeline execution finished successfully!')
+    python run_pilot_audit.py                       # live website sync, default paths
+    python run_pilot_audit.py --offline             # use dataset programs only
+    python run_pilot_audit.py --dataset my.json --output my.xlsx
+    python run_pilot_audit.py --client-source gbp-api   # client profile from the GBP API
+"""
 
-if __name__ == '__main__':
-    run_pilot()
+import argparse
+import logging
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from config import settings  # noqa: E402
+from core.adapters.gbp_api_adapter import GBPApiAdapter, apply_snapshot  # noqa: E402
+from core.adapters.website_adapter import WebsiteAdapter  # noqa: E402
+from core.dataset import load_dataset  # noqa: E402
+from core.gap_engine import GapEngine, SchoolAnalysis  # noqa: E402
+from core.models import AuditDataset, SchoolAudit  # noqa: E402
+from core.reporter import ReportGenerator  # noqa: E402
+from core.validator import format_report, validate_workbook  # noqa: E402
+
+DEFAULT_DATASET = "data/childtime_pilot_dataset.json"
+DEFAULT_OUTPUT = "RankUno_GBP_Intelligence_Audit_Master.xlsx"
+
+log = logging.getLogger("gbp.pilot")
+
+
+def sync_live_website_programs(audit: SchoolAudit, adapter: WebsiteAdapter) -> SchoolAudit:
+    """Replace the dataset's website programs with the live list when reachable."""
+    client = audit.client
+    if not client.website_url:
+        return audit
+    try:
+        live = adapter.scrape_school_page(client.website_url)
+    except Exception as exc:  # network / parse failure -> keep verified dataset
+        log.warning(
+            "%s: live website fetch failed (%s); using dataset programs", client.school_name, exc
+        )
+        return audit
+    programs = live.get("programs") or []
+    if not programs:
+        log.warning(
+            "%s: live website returned no programs; using dataset programs", client.school_name
+        )
+        return audit
+    before = {p.lower() for p in client.website_programs}
+    after = {p.lower() for p in programs}
+    if before != after:
+        log.info(
+            "%s: live programs differ from dataset (+%s / -%s)",
+            client.school_name,
+            sorted(after - before),
+            sorted(before - after),
+        )
+    else:
+        log.info(
+            "%s: live website programs match the dataset (%d)", client.school_name, len(programs)
+        )
+    return audit.model_copy(
+        update={"client": client.model_copy(update={"website_programs": programs})}
+    )
+
+
+def sync_gbp_profile(audit: SchoolAudit, adapter: "GBPApiAdapter") -> SchoolAudit:
+    """Overlay categories, service chips, rating, reviews and address from the GBP API."""
+    client = audit.client
+    if not (client.gbp_account_id and client.gbp_location_id):
+        raise ValueError(
+            f"{client.school_name}: gbp_account_id / gbp_location_id missing in the dataset "
+            "(run `python scripts/gbp_auth.py locations --account <id>` to find them)"
+        )
+    snap = adapter.fetch_location(client.gbp_account_id, client.gbp_location_id)
+    merged = apply_snapshot(client, snap)
+    log.info(
+        "%s: GBP API -> %s | %s + %s | %d service items | %s* (%s)",
+        client.school_name,
+        snap.title,
+        merged.primary_category,
+        merged.additional_categories,
+        len(merged.gbp_services),
+        merged.rating,
+        merged.reviews_count,
+    )
+    return audit.model_copy(update={"client": merged})
+
+
+def build_gbp_adapter() -> "GBPApiAdapter":
+    """Requests session + refresh-token provider from scripts/gbp_auth.py."""
+    import requests
+
+    from scripts.gbp_auth import token_provider_from_file
+
+    return GBPApiAdapter(requests.Session(), token_provider_from_file())
+
+
+def run(
+    dataset: AuditDataset, output: str, offline: bool, client_source: str = "dataset"
+) -> tuple[list[SchoolAnalysis], str]:
+    """Execute the pipeline; return the analyses and the path actually written."""
+    engine = GapEngine(brand_short=dataset.client_brand_short)
+    reporter = ReportGenerator(engine, brand_short=dataset.client_brand_short)
+    adapter = WebsiteAdapter()
+    gbp_adapter = build_gbp_adapter() if client_source == "gbp-api" else None
+
+    analyses: list[SchoolAnalysis] = []
+    for audit in dataset.schools:
+        if gbp_adapter is not None:
+            audit = sync_gbp_profile(audit, gbp_adapter)
+        if not offline:
+            audit = sync_live_website_programs(audit, adapter)
+        analysis = engine.analyze(audit)
+        analyses.append(analysis)
+        log.info(
+            "%s: %d true competitors, %d sister brands filtered, %d internal gaps, "
+            "%d external gaps, %d category gaps",
+            analysis.client.school_name,
+            analysis.total_true,
+            len(analysis.sister_brands),
+            len(analysis.internal_sync_gaps),
+            len(analysis.external_gaps),
+            len(analysis.category_gaps),
+        )
+
+    written = write_with_fallback(reporter, analyses, output)
+    log.info("workbook written: %s", written)
+    return analyses, written
+
+
+def write_with_fallback(
+    reporter: ReportGenerator, analyses: list[SchoolAnalysis], output: str
+) -> str:
+    """Save to ``output``; if Excel holds a lock on it, save next to it with a timestamp."""
+    try:
+        return reporter.generate_workbook(analyses, output)
+    except PermissionError:
+        target = Path(output)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fallback = target.with_name(f"{target.stem}_{stamp}{target.suffix}")
+        log.warning("%s is locked (open in Excel?); writing %s instead", output, fallback.name)
+        return reporter.generate_workbook(analyses, str(fallback))
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point. Returns a process exit code."""
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--dataset", default=DEFAULT_DATASET)
+    parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--offline", action="store_true", help="skip the live website program sync")
+    parser.add_argument(
+        "--no-validate", action="store_true", help="skip the post-write consistency validation"
+    )
+    parser.add_argument(
+        "--client-source",
+        choices=["dataset", "gbp-api"],
+        default="dataset",
+        help="where client categories/services/rating come from (gbp-api = official API)",
+    )
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    log.info("RankUno GBP Intelligence Engine - pilot audit")
+
+    dataset = load_dataset(args.dataset)
+    _, written = run(dataset, args.output, offline=args.offline, client_source=args.client_source)
+
+    if args.no_validate:
+        return 0
+    report = validate_workbook(
+        written,
+        threshold_pct=settings.GAP_THRESHOLD_PCT,
+        rep_floor=settings.REPUTATION_CRITICAL_BELOW,
+    )
+    print(format_report(report))  # noqa: T201 - CLI output
+    return 0 if report.ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

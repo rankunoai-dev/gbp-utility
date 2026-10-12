@@ -1,50 +1,91 @@
-﻿from typing import List, Dict, Any, Tuple
+"""Normalisation helpers shared by the engine, reporter and validator.
+
+Covers service-taxonomy mapping, sister-brand detection, category keys and
+exact (half-up) percentage rounding.
+"""
+
+from collections.abc import Iterable
+from decimal import ROUND_HALF_UP, Decimal
+
+from config import settings
+from core.taxonomy import CORE_PROGRAMS, SERVICE_SYNONYMS
+
 
 class Normalizer:
-    def __init__(self, sister_brands: List[str] = None):
-        self.sister_brands = sister_brands or [
-            "childtime", "la petite academy", "tutor time", "the children's courtyard",
-            "everbrook academy", "montessori unlimited", "creative kids", "pathways learning",
-            "young school", "apple tree", "u-gro"
-        ]
-        
-        # Taxonomy mapping: map competitor variations to standard service names
-        self.service_synonyms = {
-            "preschool program": "Preschool",
-            "pre-kindergarten": "Pre-K",
-            "discovery preschool": "Early Preschool",
-            "school break camps": "School Break Camps",
-            "summer camp": "Summer Camp",
-            "summer program": "Summer Camp",
-            "before & after school": "Before and After School",
-            "before and after school": "Before and After School",
-            "before & after school care": "Before and After School",
-            "infant care": "Infants",
-            "toddler care": "Toddlers",
-            "toddler program": "Toddlers",
-            "twos": "Twos",
-            "drop-in care": "Drop-In Care",
-            "grow fit": "Grow Fit",
-            "private kindergarten": "Private Kindergarten",
-            "junior kindergarten": "Junior Kindergarten"
-        }
+    """Stateless mapping rules; one instance is shared across a run."""
 
-    def is_sister_brand(self, business_name: str, domain_or_url: str = "") -> bool:
-        combined = f"{business_name.lower()} {domain_or_url.lower()}"
-        return any(brand in combined for brand in self.sister_brands)
+    def __init__(self, sister_brands: Iterable[str] | None = None) -> None:
+        if sister_brands is None:
+            names = list(settings.LCG_SISTER_BRANDS) + list(settings.LCG_SISTER_ALIASES)
+        else:
+            names = list(sister_brands)
+        self.sister_tokens: tuple[str, ...] = tuple(
+            sorted({n.strip().lower() for n in names if n.strip()})
+        )
+        self._order: dict[str, int] = {name: i for i, name in enumerate(CORE_PROGRAMS)}
 
-    def normalize_service(self, raw_service: str) -> str:
-        clean = raw_service.strip().lower()
-        return self.service_synonyms.get(clean, raw_service.strip())
-
+    # ------------------------------------------------------------------ services
     @staticmethod
-    def calculate_rounded_percentage(count: int, total: int) -> int:
-        if total == 0:
-            return 0
-        return round((count / total) * 100)
+    def _key(raw: str) -> str:
+        return " ".join(raw.strip().lower().split())
 
-if __name__ == '__main__':
-    norm = Normalizer()
-    print("Is La Petite a sister brand?", norm.is_sister_brand("La Petite Academy of Victor", "lapetite.com"))
-    print("Is Goddard a sister brand?", norm.is_sister_brand("The Goddard School", "goddardschool.com"))
-    print("Rounding 2 of 3:", norm.calculate_rounded_percentage(2, 3), "%")
+    def canonical_service(self, raw: str) -> str | None:
+        """Map a raw service label onto a canonical program, or ``None``."""
+        key = self._key(raw)
+        if not key:
+            return None
+        if key in SERVICE_SYNONYMS:
+            return SERVICE_SYNONYMS[key]
+        alt = " ".join(key.replace("&", "and").split())
+        return SERVICE_SYNONYMS.get(alt)
+
+    def canonical_set(self, raw_services: Iterable[str]) -> dict[str, str]:
+        """Return ``{canonical: first raw label}`` for every mapped service."""
+        out: dict[str, str] = {}
+        for raw in raw_services:
+            canon = self.canonical_service(raw)
+            if canon and canon not in out:
+                out[canon] = raw.strip()
+        return out
+
+    def unmapped(self, raw_services: Iterable[str]) -> list[str]:
+        """Raw labels that do not map onto the taxonomy."""
+        return [r.strip() for r in raw_services if self.canonical_service(r) is None]
+
+    def taxonomy_rank(self, canonical: str) -> int:
+        """Position of a canonical program in the display order."""
+        return self._order.get(canonical, len(self._order))
+
+    def order_raw_programs(self, raw_programs: Iterable[str]) -> list[str]:
+        """Order raw labels by taxonomy rank; unmapped labels go last (A-Z)."""
+        mapped: list[tuple[int, str]] = []
+        unmapped: list[str] = []
+        for raw in raw_programs:
+            canon = self.canonical_service(raw)
+            if canon:
+                mapped.append((self.taxonomy_rank(canon), raw.strip()))
+            else:
+                unmapped.append(raw.strip())
+        mapped.sort(key=lambda t: t[0])
+        return [r for _, r in mapped] + sorted(unmapped, key=str.lower)
+
+    # ---------------------------------------------------------------- categories
+    @staticmethod
+    def category_key(raw: str) -> str:
+        """Case/whitespace-insensitive comparison key for a GBP category."""
+        return " ".join(raw.strip().lower().split())
+
+    # -------------------------------------------------------------- sister brand
+    def is_sister_brand(self, business_name: str, domain_or_url: str = "") -> bool:
+        """True when the name or URL contains any Learning Care Group brand."""
+        haystack = f"{business_name} {domain_or_url}".lower()
+        return any(token in haystack for token in self.sister_tokens)
+
+    # ------------------------------------------------------------------ maths
+    @staticmethod
+    def pct(count: int, total: int) -> int:
+        """Whole-number percentage with exact half-up rounding (2/3 -> 67)."""
+        if total <= 0:
+            return 0
+        value = Decimal(count) * Decimal(100) / Decimal(total)
+        return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))

@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["core/adapters/bright_data_adapter.py", "build_*.py", "generate_report*.py", "fetch_live_childtime.py", "inspect_wb.py", "test_*.py"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "RET"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]
+"run_pilot_audit.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

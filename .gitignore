@@ -32,3 +32,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Google Business Profile API credentials
+client_secret*.json
+.gbp_token.json
